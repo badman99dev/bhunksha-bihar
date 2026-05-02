@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import sharp from 'sharp';
 
 const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in';
 
@@ -24,137 +23,26 @@ function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY:
   return `${BHUNAKSHA}/WMS?${params.toString()}`;
 }
 
-async function downloadImage(url: string): Promise<Buffer> {
-  const res = await fetch(url, {
-    headers: { 'Referer': `${BHUNAKSHA}/10/indexmain.jsp` }
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const arrayBuf = await res.arrayBuffer();
-  return Buffer.from(arrayBuf);
-}
-
-async function findContentBounds(buffer: Buffer) {
-  const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
-  const { width, height, channels } = info;
-
-  let minX = width, minY = height, maxX = 0, maxY = 0;
-  let contentPixels = 0;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * channels;
-      const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
-      const isTransparent = a < 10;
-      const isWhite = r > 240 && g > 240 && b > 240;
-      if (!isTransparent && !isWhite) {
-        contentPixels++;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  const marginX = Math.floor((maxX - minX) * 0.02);
-  const marginY = Math.floor((maxY - minY) * 0.02);
-
-  return {
-    minX: Math.max(0, minX - marginX),
-    minY: Math.max(0, minY - marginY),
-    maxX: Math.min(width - 1, maxX + marginX),
-    maxY: Math.min(height - 1, maxY + marginY),
-    contentPixels,
-    width,
-    height
-  };
-}
-
-function pixelToBBOX(bounds: { minX: number; minY: number; maxX: number; maxY: number }, origBBOX: { minX: number; minY: number; maxX: number; maxY: number }, imgW: number, imgH: number) {
-  const bboxW = origBBOX.maxX - origBBOX.minX;
-  const bboxH = origBBOX.maxY - origBBOX.minY;
-  return {
-    minX: origBBOX.minX + (bounds.minX / imgW) * bboxW,
-    maxX: origBBOX.minX + (bounds.maxX / imgW) * bboxW,
-    minY: origBBOX.minY + (bounds.minY / imgH) * bboxH,
-    maxY: origBBOX.minY + (bounds.maxY / imgH) * bboxH
-  };
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { levels, state, resolution, dpi } = body;
+    const { gisCode, state, tightBBOX, resolution, dpi, aspectRatio } = body;
 
-    if (!levels || !Array.isArray(levels) || levels.length < 7) {
-      return NextResponse.json({ error: 'All 7 levels must be selected' }, { status: 400 });
+    if (!gisCode || !tightBBOX || !aspectRatio) {
+      return NextResponse.json({ error: 'Missing analyze data' }, { status: 400 });
     }
 
     const stateCode = state || '10';
-    const targetWidth = resolution || 4000;
+    const highW = resolution || 4000;
+    const highH = Math.round(highW / parseFloat(aspectRatio));
     const targetDpi = dpi || 420;
-    const gisLevels = levels.join(',') + ',';
-
-    // Step 1: Get GIS code and BBOX from BhuNaksha
-    const extentBody = new URLSearchParams({
-      state: stateCode,
-      gisLevels,
-      srs: '0'
-    });
-
-    const extentRes = await fetch(`${BHUNAKSHA}/rest/MapInfo/getVVVVExtentGeoref`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Referer': `${BHUNAKSHA}/${stateCode}/indexmain.jsp`,
-      },
-      body: extentBody.toString()
-    });
-
-    const extentText = await extentRes.text();
-    let extentData;
-    try {
-      extentData = JSON.parse(extentText);
-    } catch {
-      return NextResponse.json({
-        error: 'BhuNaksha API returned invalid response',
-        detail: extentText.substring(0, 300),
-        gisLevels
-      }, { status: 502 });
-    }
-
-    if (!extentData.gisCode || !extentData.xmax) {
-      return NextResponse.json({
-        error: 'Map not found for selected levels',
-        gisLevels,
-        response: extentData
-      }, { status: 404 });
-    }
-
-    const gisCode = extentData.gisCode;
-    const origBBOX = {
-      minX: extentData.xmin,
-      minY: extentData.ymin,
-      maxX: extentData.xmax,
-      maxY: extentData.ymax
-    };
-
-    // Step 2: Download low-res
-    const lowW = 800, lowH = 1280;
-    const lowUrl = buildWMSUrl(gisCode, stateCode, origBBOX, lowW, lowH, targetDpi);
-    const lowBuffer = await downloadImage(lowUrl);
-
-    const bounds = await findContentBounds(lowBuffer);
-
-    const tightBBOX = pixelToBBOX(bounds, origBBOX, bounds.width, bounds.height);
-    const aspectRatio = (tightBBOX.maxX - tightBBOX.minX) / (tightBBOX.maxY - tightBBOX.minY);
-    const highW = targetWidth;
-    const highH = Math.round(highW / aspectRatio);
 
     const highUrl = buildWMSUrl(gisCode, stateCode, tightBBOX, highW, highH, targetDpi);
-    const highBuffer = await downloadImage(highUrl);
+    const highRes = await fetch(highUrl, { headers: { 'Referer': `${BHUNAKSHA}/10/indexmain.jsp` } });
+    if (!highRes.ok) throw new Error(`High-res HTTP ${highRes.status}`);
+    const arrayBuf = await highRes.arrayBuffer();
 
-    return new NextResponse(highBuffer.buffer as ArrayBuffer, {
+    return new NextResponse(arrayBuf, {
       headers: {
         'Content-Type': 'image/png',
         'Content-Disposition': `attachment; filename="bhunaksha_${gisCode}.png"`,
@@ -162,7 +50,6 @@ export async function POST(req: NextRequest) {
         'X-Image-Dimensions': `${highW}x${highH}`,
       }
     });
-
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
