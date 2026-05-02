@@ -38,6 +38,13 @@ function parseLevelData(arr: any[]): LevelOption[] {
 
 type Phase = 'idle' | 'fetching' | 'cropping' | 'removing' | 'upscaling' | 'ready' | 'error';
 
+const STEPS = [
+  { key: 'fetching', num: '1', label: 'Fetch Map' },
+  { key: 'cropping', num: '2', label: 'Smart Crop' },
+  { key: 'removing', num: '3', label: 'Remove BG' },
+  { key: 'upscaling', num: '4', label: 'Upscale' },
+];
+
 export default function Home() {
   const [selections, setSelections] = useState<string[]>(Array(7).fill(''));
   const [options, setOptions] = useState<LevelOption[][]>(Array(7).fill(null).map(() => []));
@@ -51,8 +58,8 @@ export default function Home() {
   const [cropStyle, setCropStyle] = useState<React.CSSProperties>({});
   const [bgBlack, setBgBlack] = useState(false);
   const [upscaleText, setUpscaleText] = useState('');
+  const [upscalePct, setUpscalePct] = useState(0);
   const fetchIdRef = useRef(0);
-  const viewerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { fetchLevels(0, []); }, []);
 
@@ -90,19 +97,13 @@ export default function Home() {
   }
 
   function resetPreview() {
-    setPhase('idle');
-    setAnalyzeData(null);
-    setHighResBlob(null);
-    setBgBlack(false);
-    setCropStyle({});
-    setUpscaleText('');
-    setErrorMsg('');
+    setPhase('idle'); setAnalyzeData(null); setHighResBlob(null);
+    setBgBlack(false); setCropStyle({}); setUpscaleText(''); setUpscalePct(0); setErrorMsg('');
   }
 
   async function handleStart() {
     resetPreview();
     setPhase('fetching');
-
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
@@ -113,43 +114,39 @@ export default function Home() {
       const data = await res.json();
       setAnalyzeData(data);
 
-      // Phase: show low-res
       setPhase('cropping');
-
-      // Animate crop after short delay
-      await sleep(300);
+      await sleep(600);
       setCropStyle({
         clipPath: `inset(${data.cropPct.top}% ${data.cropPct.right}% ${data.cropPct.bottom}% ${data.cropPct.left}%)`,
-        transition: 'clip-path 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'clip-path 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
       });
 
-      await sleep(1500);
-
-      // Phase: removing background
+      await sleep(2000);
       setPhase('removing');
       setBgBlack(true);
-      await sleep(1500);
+      await sleep(1800);
 
-      // Phase: upscaling
       setPhase('upscaling');
       const resLabel = RESOLUTION_OPTIONS.find(r => r.value === resolution)?.label || `${resolution}px`;
-      setUpscaleText(`Upscaling to ${resLabel}...`);
+      setUpscaleText(resLabel);
 
-      // Start high-res download in parallel
+      // Animate percentage
+      for (let p = 0; p <= 100; p += 3) {
+        setUpscalePct(p);
+        await sleep(50);
+      }
+      setUpscalePct(100);
+
       const dlRes = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gisCode: data.gisCode, state: '10', tightBBOX: data.tightBBOX, resolution, dpi, aspectRatio: data.aspectRatio }),
       });
       if (!dlRes.ok) { const e = await dlRes.json(); throw new Error(e.error || 'Download failed'); }
-
       const blob = await dlRes.blob();
       setHighResBlob(blob);
-      setUpscaleText(`Upscaled to ${resLabel} ✅`);
-
-      await sleep(800);
+      await sleep(600);
       setPhase('ready');
-
     } catch (err: any) {
       setPhase('error');
       setErrorMsg(err.message);
@@ -171,6 +168,7 @@ export default function Home() {
   const allSelected = selections.every(s => s !== '');
   const selectedRes = RESOLUTION_OPTIONS.find(r => r.value === resolution);
   const showViewer = phase !== 'idle';
+  const activeStepIdx = STEPS.findIndex(s => s.key === phase);
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0f', fontFamily: "'Segoe UI', system-ui, sans-serif", color: '#e0e0e0' }}>
@@ -245,7 +243,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Start / Download Button */}
+        {/* Generate Button */}
         {!showViewer && (
           <button onClick={handleStart} disabled={!allSelected} style={{
             width: '100%', padding: '14px',
@@ -258,140 +256,241 @@ export default function Home() {
           </button>
         )}
 
-        {/* MAP VIEWER - The magic happens here */}
+        {/* ===== MAP VIEWER ===== */}
         {showViewer && (
           <div style={{
             marginTop: '24px',
-            background: bgBlack ? '#000' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${bgBlack ? '#111' : 'rgba(255,255,255,0.06)'}`,
+            background: bgBlack ? '#000' : '#08080d',
+            border: `1px solid ${bgBlack ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.06)'}`,
             borderRadius: '12px',
             overflow: 'hidden',
-            transition: 'background 0.8s ease',
+            transition: 'all 1s ease',
+            boxShadow: bgBlack ? '0 0 40px rgba(16,185,129,0.08)' : 'none',
           }}>
-            {/* Phase indicator */}
-            <div style={{
-              padding: '16px 20px',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <div>
-                <div style={{ fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase', color: '#4b5563', marginBottom: '4px' }}>
-                  {phase === 'fetching' ? 'Step 1 of 3' : phase === 'cropping' ? 'Step 2 of 3' : phase === 'removing' ? 'Step 3 of 3' : phase === 'upscaling' ? 'Finalizing' : phase === 'ready' ? 'Complete' : 'Error'}
-                </div>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: phase === 'ready' ? '#34d399' : phase === 'error' ? '#f87171' : '#e0e0e0' }}>
+
+            {/* Step Progress Bar */}
+            <div style={{ padding: '16px 20px 12px' }}>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                {STEPS.map((step, idx) => {
+                  const isActive = idx === activeStepIdx;
+                  const isDone = idx < activeStepIdx || phase === 'ready';
+                  const isPending = idx > activeStepIdx;
+                  return (
+                    <div key={step.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                      <div style={{
+                        width: '100%', height: '3px',
+                        background: isDone ? '#10b981' : isActive ? 'linear-gradient(90deg, #3b82f6, #8b5cf6)' : 'rgba(255,255,255,0.06)',
+                        borderRadius: '2px',
+                        transition: 'all 0.5s ease',
+                        ...(isActive ? { animation: 'shimmer 1.5s ease-in-out infinite' } : {}),
+                      }} />
+                      <div style={{
+                        fontSize: '10px', fontWeight: '600',
+                        color: isDone ? '#10b981' : isActive ? '#60a5fa' : '#374151',
+                        transition: 'color 0.3s',
+                        letterSpacing: '0.5px',
+                      }}>
+                        {step.label}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Status Text */}
+            <div style={{ padding: '4px 20px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  fontSize: '15px', fontWeight: '600',
+                  color: phase === 'ready' ? '#34d399' : phase === 'error' ? '#f87171' : '#e0e0e0',
+                  transition: 'color 0.3s',
+                }}>
                   {phase === 'fetching' && '📡 Fetching map from BhuNaksha...'}
-                  {phase === 'cropping' && `✂️ Detecting content — ${analyzeData?.blankPct}% blank removed`}
+                  {phase === 'cropping' && `✂️ Smart crop — ${analyzeData?.blankPct}% blank removed`}
                   {phase === 'removing' && '🎨 Removing background...'}
-                  {phase === 'upscaling' && upscaleText}
+                  {phase === 'upscaling' && `⚡ Upscaling to ${upscaleText}...`}
                   {phase === 'ready' && '✅ Map ready!'}
                   {phase === 'error' && `❌ ${errorMsg}`}
                 </div>
+                {phase === 'upscaling' && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{
+                      width: '100%', height: '4px',
+                      background: 'rgba(59,130,246,0.1)',
+                      borderRadius: '2px',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        width: `${upscalePct}%`, height: '100%',
+                        background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                        borderRadius: '2px',
+                        transition: 'width 0.1s linear',
+                      }} />
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{upscalePct}%</div>
+                  </div>
+                )}
               </div>
               {phase !== 'ready' && phase !== 'error' && (
                 <div style={{
-                  width: '20px', height: '20px',
-                  border: '2px solid rgba(59,130,246,0.3)',
+                  width: '18px', height: '18px', flexShrink: 0,
+                  border: '2px solid rgba(59,130,246,0.2)',
                   borderTopColor: '#3b82f6',
                   borderRadius: '50%',
-                  animation: 'spin 1s linear infinite',
+                  animation: 'spin 0.8s linear infinite',
                 }} />
               )}
             </div>
 
-            {/* Image area */}
-            <div ref={viewerRef} style={{
+            {/* Image Area */}
+            <div style={{
               position: 'relative',
               minHeight: '320px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               padding: '20px',
+              background: 'radial-gradient(ellipse at center, rgba(59,130,246,0.03) 0%, transparent 70%)',
             }}>
-              {/* Low-res preview with crop animation */}
-              {analyzeData?.lowResImage && phase !== 'ready' && (
+
+              {/* Scanning line animation during cropping */}
+              {phase === 'cropping' && analyzeData?.lowResImage && (
                 <div style={{
-                  position: 'relative',
-                  width: '100%',
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
+                  position: 'absolute', top: '20px', bottom: '20px', left: '20px', right: '20px',
+                  pointerEvents: 'none', overflow: 'hidden', zIndex: 10,
                 }}>
-                  <img
-                    src={analyzeData.lowResImage}
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: '400px',
-                      objectFit: 'contain',
-                      ...cropStyle,
-                      filter: (phase === 'removing' || phase === 'upscaling') ? 'blur(4px) brightness(0.4)' : 'none',
-                      transition: `${cropStyle.transition || ''}, filter 0.8s ease`,
-                    }}
-                  />
-                  {/* Overlay text during upscaling */}
-                  {(phase === 'upscaling') && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                      textAlign: 'center',
-                    }}>
-                      <div style={{
-                        fontSize: '28px', fontWeight: '700', color: '#60a5fa',
-                        textShadow: '0 0 20px rgba(59,130,246,0.5)',
-                        animation: 'pulse 1.5s ease-in-out infinite',
-                      }}>
-                        {upscaleText}
-                      </div>
-                    </div>
-                  )}
+                  <div style={{
+                    position: 'absolute', top: 0, left: 0, right: 0,
+                    height: '2px',
+                    background: 'linear-gradient(90deg, transparent, #3b82f6, transparent)',
+                    boxShadow: '0 0 15px rgba(59,130,246,0.5), 0 0 30px rgba(59,130,246,0.2)',
+                    animation: 'scanLine 2s ease-in-out infinite',
+                  }} />
                 </div>
               )}
 
-              {/* Final high-res preview */}
-              {phase === 'ready' && highResBlob && (
+              {/* Glow pulse during removing */}
+              {(phase === 'removing') && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'radial-gradient(circle at center, rgba(16,185,129,0.08) 0%, transparent 60%)',
+                  animation: 'glowPulse 1.5s ease-in-out infinite',
+                  pointerEvents: 'none',
+                }} />
+              )}
+
+              {/* Low-res preview - ALWAYS blurred from step 2 onwards */}
+              {analyzeData?.lowResImage && phase !== 'ready' && (
                 <img
-                  src={URL.createObjectURL(highResBlob)}
+                  src={analyzeData.lowResImage}
                   style={{
                     maxWidth: '100%',
-                    maxHeight: '500px',
+                    maxHeight: '400px',
                     objectFit: 'contain',
-                    borderRadius: '8px',
-                    animation: 'fadeInUp 0.6s ease-out',
+                    ...cropStyle,
+                    filter: `blur(${phase === 'cropping' ? '6px' : phase === 'removing' ? '10px brightness(0.3)' : phase === 'upscaling' ? '12px brightness(0.2)' : '0px'})`,
+                    transition: `${cropStyle.transition || ''}, filter 1s ease`,
+                    borderRadius: '4px',
                   }}
                 />
               )}
 
-              {/* Fetching spinner */}
-              {phase === 'fetching' && !analyzeData && (
+              {/* Upscaling overlay text */}
+              {phase === 'upscaling' && (
                 <div style={{
-                  textAlign: 'center',
-                  padding: '60px 20px',
+                  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                  textAlign: 'center', zIndex: 20, pointerEvents: 'none',
                 }}>
                   <div style={{
-                    width: '40px', height: '40px', margin: '0 auto 16px',
-                    border: '3px solid rgba(59,130,246,0.2)',
+                    fontSize: '32px', fontWeight: '800',
+                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    animation: 'textPulse 1.2s ease-in-out infinite',
+                    letterSpacing: '-0.5px',
+                  }}>
+                    {upscaleText}
+                  </div>
+                  <div style={{
+                    fontSize: '13px', color: 'rgba(255,255,255,0.4)',
+                    marginTop: '8px',
+                    animation: 'fadeInOut 2s ease-in-out infinite',
+                  }}>
+                    AI Enhancement in Progress
+                  </div>
+                </div>
+              )}
+
+              {/* Removing BG overlay */}
+              {phase === 'removing' && (
+                <div style={{
+                  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                  textAlign: 'center', zIndex: 20, pointerEvents: 'none',
+                }}>
+                  <div style={{
+                    fontSize: '24px', fontWeight: '700', color: '#10b981',
+                    animation: 'textPulse 1s ease-in-out infinite',
+                  }}>
+                    🎨 Cleaning
+                  </div>
+                </div>
+              )}
+
+              {/* Fetching spinner */}
+              {phase === 'fetching' && !analyzeData && (
+                <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                  <div style={{
+                    width: '48px', height: '48px', margin: '0 auto 20px',
+                    border: '3px solid rgba(59,130,246,0.15)',
                     borderTopColor: '#3b82f6',
                     borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite',
+                    animation: 'spin 0.7s linear infinite',
                   }} />
                   <div style={{ color: '#6b7280', fontSize: '14px' }}>Connecting to BhuNaksha server...</div>
+                  <div style={{
+                    marginTop: '12px', width: '120px', height: '2px',
+                    background: 'rgba(59,130,246,0.1)', borderRadius: '1px',
+                    margin: '12px auto 0', overflow: 'hidden',
+                  }}>
+                    <div style={{ width: '40%', height: '100%', background: '#3b82f6', borderRadius: '1px', animation: 'loadSlide 1.5s ease-in-out infinite' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Final high-res result */}
+              {phase === 'ready' && highResBlob && (
+                <div style={{ animation: 'revealMap 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                  <img
+                    src={URL.createObjectURL(highResBlob)}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '500px',
+                      objectFit: 'contain',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+                    }}
+                  />
+                  {/* Sparkle particles */}
+                  <div style={{ position: 'absolute', top: '10%', left: '15%', fontSize: '16px', animation: 'sparkle 2s ease-out infinite' }}>✨</div>
+                  <div style={{ position: 'absolute', top: '20%', right: '20%', fontSize: '12px', animation: 'sparkle 2s ease-out infinite 0.5s' }}>✨</div>
+                  <div style={{ position: 'absolute', bottom: '25%', left: '25%', fontSize: '14px', animation: 'sparkle 2s ease-out infinite 1s' }}>✨</div>
                 </div>
               )}
             </div>
 
             {/* Download button */}
             {phase === 'ready' && (
-              <div style={{ padding: '0 20px 20px' }}>
+              <div style={{ padding: '0 20px 20px', animation: 'fadeInUp 0.5s ease-out' }}>
                 <button onClick={handleDownload} style={{
-                  width: '100%', padding: '14px',
+                  width: '100%', padding: '16px',
                   background: 'linear-gradient(135deg, #10b981, #059669)',
                   color: '#fff', border: 'none', borderRadius: '10px',
-                  fontSize: '16px', fontWeight: '700', cursor: 'pointer',
+                  fontSize: '17px', fontWeight: '700', cursor: 'pointer',
                   transition: 'all 0.3s',
-                  animation: 'fadeInUp 0.5s ease-out',
+                  boxShadow: '0 4px 20px rgba(16,185,129,0.3)',
                 }}>
-                  💾 Download Map
+                  💾 Download {selectedRes?.label || ''} Map
                 </button>
               </div>
             )}
@@ -411,7 +510,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Back button when in viewer */}
         {showViewer && phase === 'ready' && (
           <button onClick={resetPreview} style={{
             width: '100%', padding: '12px', marginTop: '12px',
@@ -423,11 +521,45 @@ export default function Home() {
         )}
       </div>
 
-      {/* CSS Animations */}
+      {/* All CSS Animations */}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes scanLine {
+          0% { top: 0; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
+        }
+        @keyframes glowPulse {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 1; }
+        }
+        @keyframes textPulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.85; }
+        }
+        @keyframes fadeInOut {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.7; }
+        }
+        @keyframes loadSlide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(350%); }
+        }
+        @keyframes revealMap {
+          0% { opacity: 0; transform: scale(0.9); filter: blur(10px); }
+          100% { opacity: 1; transform: scale(1); filter: blur(0px); }
+        }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(15px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes sparkle {
+          0% { opacity: 0; transform: scale(0) rotate(0deg); }
+          50% { opacity: 1; transform: scale(1) rotate(180deg); }
+          100% { opacity: 0; transform: scale(0) rotate(360deg); }
+        }
       `}</style>
     </div>
   );
