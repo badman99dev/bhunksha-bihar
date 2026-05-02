@@ -21,7 +21,7 @@ function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY:
     HEIGHT: String(height),
     BBOX: `${bbox.minX},${bbox.minY},${bbox.maxX},${bbox.maxY}`
   });
-  return `${BHUNAKSHA}/${state}/WMS?${params.toString()}`;
+  return `${BHUNAKSHA}/WMS?${params.toString()}`;
 }
 
 async function downloadImage(url: string): Promise<Buffer> {
