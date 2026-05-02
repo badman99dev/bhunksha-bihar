@@ -84,13 +84,15 @@ function pixelToBBOX(bounds: { minX: number; minY: number; maxX: number; maxY: n
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { levels, state } = body;
+    const { levels, state, resolution, dpi } = body;
 
     if (!levels || !Array.isArray(levels) || levels.length < 7) {
       return NextResponse.json({ error: 'All 7 levels must be selected' }, { status: 400 });
     }
 
     const stateCode = state || '10';
+    const targetWidth = resolution || 4000;
+    const targetDpi = dpi || 420;
     const gisLevels = levels.join(',') + ',';
 
     // Step 1: Get GIS code and BBOX from BhuNaksha
@@ -138,21 +140,18 @@ export async function POST(req: NextRequest) {
     };
 
     // Step 2: Download low-res
-    const lowW = 800, lowH = 1280, dpi = 420;
-    const lowUrl = buildWMSUrl(gisCode, stateCode, origBBOX, lowW, lowH, dpi);
+    const lowW = 800, lowH = 1280;
+    const lowUrl = buildWMSUrl(gisCode, stateCode, origBBOX, lowW, lowH, targetDpi);
     const lowBuffer = await downloadImage(lowUrl);
 
-    // Step 3: Find content bounds
     const bounds = await findContentBounds(lowBuffer);
 
-    // Step 4: Calculate tight BBOX
     const tightBBOX = pixelToBBOX(bounds, origBBOX, bounds.width, bounds.height);
     const aspectRatio = (tightBBOX.maxX - tightBBOX.minX) / (tightBBOX.maxY - tightBBOX.minY);
-    const highW = 4000;
+    const highW = targetWidth;
     const highH = Math.round(highW / aspectRatio);
 
-    // Step 5: Download high-res
-    const highUrl = buildWMSUrl(gisCode, stateCode, tightBBOX, highW, highH, dpi);
+    const highUrl = buildWMSUrl(gisCode, stateCode, tightBBOX, highW, highH, targetDpi);
     const highBuffer = await downloadImage(highUrl);
 
     return new NextResponse(highBuffer.buffer as ArrayBuffer, {

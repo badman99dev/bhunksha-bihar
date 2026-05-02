@@ -12,6 +12,22 @@ const LEVEL_LABELS = [
   'Sheet No'
 ];
 
+const RESOLUTION_OPTIONS = [
+  { value: 800, label: 'Low Quality', sub: '800px', warn: false },
+  { value: 2000, label: '2K', sub: '2000px', warn: false },
+  { value: 4000, label: '4K', sub: '4000px', warn: false },
+  { value: 8000, label: '8K', sub: '8000px', warn: true, msg: '⚠️ Slow download & heavy processing' },
+  { value: 16000, label: '16K', sub: '16000px', warn: true, msg: '⚠️ Very slow! May fail on large maps' },
+];
+
+const DPI_OPTIONS = [
+  { value: 90, label: '90 DPI', sub: 'Screen' },
+  { value: 150, label: '150 DPI', sub: 'Draft Print' },
+  { value: 300, label: '300 DPI', sub: 'Standard Print' },
+  { value: 420, label: '420 DPI', sub: 'High Quality' },
+  { value: 600, label: '600 DPI', sub: 'Ultra Print' },
+];
+
 interface LevelOption {
   code: string;
   label: string;
@@ -38,6 +54,8 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [resolution, setResolution] = useState(4000);
+  const [dpi, setDpi] = useState(420);
   const fetchIdRef = useRef(0);
 
   useEffect(() => {
@@ -56,9 +74,7 @@ export default function Home() {
     try {
       const codes = parentSelections.filter(c => c !== '').join(',');
       const res = await fetch(`/api/levels?state=10&level=${fromLevel}&codes=${codes}`);
-
       if (!res.ok) throw new Error('API error');
-
       const data = await res.json();
 
       if (fetchIdRef.current !== thisFetchId) return;
@@ -66,11 +82,7 @@ export default function Home() {
       if (Array.isArray(data) && data.length > 0) {
         const parsedAll: LevelOption[][] = [];
         for (let i = 0; i < data.length; i++) {
-          if (Array.isArray(data[i])) {
-            parsedAll.push(parseLevelData(data[i]));
-          } else {
-            parsedAll.push([]);
-          }
+          parsedAll.push(Array.isArray(data[i]) ? parseLevelData(data[i]) : []);
         }
 
         setOptions(prev => {
@@ -84,17 +96,11 @@ export default function Home() {
 
         setSelections(prev => {
           const next = [...prev];
-          for (let i = 0; i < fromLevel; i++) {
-            next[i] = prev[i];
-          }
+          for (let i = 0; i < fromLevel; i++) next[i] = prev[i];
           for (let i = fromLevel; i < 7; i++) {
             const dataIdx = i - fromLevel;
             const opts = dataIdx < parsedAll.length ? parsedAll[dataIdx] : [];
-            if (opts.length === 1) {
-              next[i] = opts[0].code;
-            } else {
-              next[i] = '';
-            }
+            next[i] = opts.length === 1 ? opts[0].code : '';
           }
           return next;
         });
@@ -119,13 +125,11 @@ export default function Home() {
       for (let i = level + 1; i < 7; i++) next[i] = '';
       return next;
     });
-
     setOptions(prev => {
       const next = [...prev];
       for (let i = level + 1; i < 7; i++) next[i] = [];
       return next;
     });
-
     if (value) {
       const currentSels = [...selections];
       currentSels[level] = value;
@@ -143,7 +147,7 @@ export default function Home() {
       const response = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ levels: selections, state: '10' }),
+        body: JSON.stringify({ levels: selections, state: '10', resolution, dpi }),
       });
 
       if (!response.ok) {
@@ -172,6 +176,7 @@ export default function Home() {
   }
 
   const allSelected = selections.every(s => s !== '');
+  const selectedRes = RESOLUTION_OPTIONS.find(r => r.value === resolution);
 
   return (
     <div style={{
@@ -205,12 +210,13 @@ export default function Home() {
           </p>
         </div>
 
+        {/* Location Section */}
         <div style={{
           background: 'rgba(255,255,255,0.03)',
           border: '1px solid rgba(255,255,255,0.06)',
           borderRadius: '12px',
           padding: '28px',
-          marginBottom: '24px',
+          marginBottom: '16px',
         }}>
           <div style={{
             fontSize: '11px',
@@ -233,7 +239,6 @@ export default function Home() {
                   fontWeight: '500',
                   color: isEnabled ? '#9ca3af' : '#374151',
                   marginBottom: '6px',
-                  transition: 'color 0.2s',
                 }}>
                   {label}
                 </label>
@@ -253,7 +258,6 @@ export default function Home() {
                       outline: 'none',
                       appearance: 'none',
                       cursor: isEnabled ? 'pointer' : 'not-allowed',
-                      transition: 'all 0.2s',
                     }}
                   >
                     <option value="">
@@ -265,13 +269,9 @@ export default function Home() {
                   </select>
                   {isEnabled && hasOpts && (
                     <div style={{
-                      position: 'absolute',
-                      right: '12px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      pointerEvents: 'none',
-                      color: '#6b7280',
-                      fontSize: '10px',
+                      position: 'absolute', right: '12px', top: '50%',
+                      transform: 'translateY(-50%)', pointerEvents: 'none',
+                      color: '#6b7280', fontSize: '10px',
                     }}>▼</div>
                   )}
                 </div>
@@ -280,6 +280,123 @@ export default function Home() {
           })}
         </div>
 
+        {/* Quality Settings */}
+        <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: '12px',
+          padding: '28px',
+          marginBottom: '24px',
+        }}>
+          <div style={{
+            fontSize: '11px',
+            letterSpacing: '3px',
+            textTransform: 'uppercase',
+            color: '#4b5563',
+            marginBottom: '20px',
+          }}>Quality Settings</div>
+
+          {/* Resolution */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#9ca3af',
+              marginBottom: '10px',
+            }}>
+              Resolution
+            </label>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '6px',
+            }}>
+              {RESOLUTION_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setResolution(opt.value)}
+                  style={{
+                    padding: '8px 4px',
+                    background: resolution === opt.value
+                      ? (opt.warn ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)')
+                      : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${resolution === opt.value
+                      ? (opt.warn ? 'rgba(245,158,11,0.4)' : 'rgba(59,130,246,0.4)')
+                      : 'rgba(255,255,255,0.06)'}`,
+                    borderRadius: '6px',
+                    color: resolution === opt.value
+                      ? (opt.warn ? '#fbbf24' : '#60a5fa')
+                      : '#6b7280',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: '600' }}>{opt.label}</div>
+                  <div style={{ fontSize: '10px', opacity: 0.7 }}>{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+            {selectedRes?.warn && (
+              <div style={{
+                marginTop: '8px',
+                padding: '8px 12px',
+                background: 'rgba(245,158,11,0.08)',
+                border: '1px solid rgba(245,158,11,0.15)',
+                borderRadius: '6px',
+                color: '#fbbf24',
+                fontSize: '12px',
+              }}>
+                {selectedRes.msg}
+              </div>
+            )}
+          </div>
+
+          {/* DPI */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#9ca3af',
+              marginBottom: '10px',
+            }}>
+              DPI (Print Quality)
+            </label>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '6px',
+            }}>
+              {DPI_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setDpi(opt.value)}
+                  style={{
+                    padding: '8px 4px',
+                    background: dpi === opt.value
+                      ? 'rgba(139,92,246,0.15)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${dpi === opt.value
+                      ? 'rgba(139,92,246,0.4)'
+                      : 'rgba(255,255,255,0.06)'}`,
+                    borderRadius: '6px',
+                    color: dpi === opt.value ? '#a78bfa' : '#6b7280',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: '600' }}>{opt.label}</div>
+                  <div style={{ fontSize: '10px', opacity: 0.7 }}>{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Download Button */}
         <button
           onClick={handleDownload}
           disabled={!allSelected || downloading}
@@ -298,7 +415,7 @@ export default function Home() {
             transition: 'all 0.3s',
           }}
         >
-          {downloading ? '⏳ Processing...' : allSelected ? '📥 Download High-Quality Map' : 'Select all levels to download'}
+          {downloading ? '⏳ Processing...' : allSelected ? `📥 Download ${selectedRes?.label || ''} Map` : 'Select all levels to download'}
         </button>
 
         {status && (
@@ -353,9 +470,9 @@ export default function Home() {
             color: '#6b7280',
           }}>
             <li>Select District → Sub Div → Circle → Mauza → Survey → Map → Sheet</li>
-            <li>Server auto-resolves GIS code &amp; map extent from BhuNaksha</li>
-            <li>Downloads low-res scan, analyzes pixel content bounds</li>
-            <li>Downloads &amp; crops high-quality 4000px map</li>
+            <li>Choose resolution &amp; DPI quality</li>
+            <li>Server auto-resolves GIS code &amp; map extent</li>
+            <li>Smart crops &amp; delivers high-quality map</li>
           </ol>
         </div>
       </div>
