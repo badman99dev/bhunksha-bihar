@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const LEVEL_LABELS = [
   'District',
@@ -38,80 +38,103 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
-
-  const fetchLevels = useCallback(async (fromLevel: number, parentSelections: string[]) => {
-    const newLoading = [...loading];
-    for (let i = fromLevel; i < 7; i++) newLoading[i] = true;
-    setLoading(newLoading);
-
-    try {
-      const codes = parentSelections.filter(c => c !== '').join(',');
-      const res = await fetch(`/api/levels?state=10&level=${fromLevel}&codes=${codes}`);
-      const data = await res.json();
-
-      if (Array.isArray(data) && data.length > 0) {
-        const newOptions = [...options];
-        for (let i = fromLevel; i < 7; i++) {
-          const dataIdx = i - fromLevel;
-          if (dataIdx < data.length && Array.isArray(data[dataIdx])) {
-            const parsed = parseLevelData(data[dataIdx]);
-            newOptions[i] = parsed;
-            if (parsed.length === 1) {
-              const newSels = [...parentSelections];
-              for (let j = fromLevel; j < i; j++) {
-                if (!newSels[j] && newOptions[j].length > 0) {
-                  newSels[j] = newOptions[j][0].code;
-                }
-              }
-              newSels[i] = parsed[0].code;
-            }
-          } else {
-            newOptions[i] = [];
-          }
-        }
-        setOptions(newOptions);
-
-        const newSels = [...selections];
-        for (let i = fromLevel; i < 7; i++) {
-          if (newOptions[i].length === 1) {
-            newSels[i] = newOptions[i][0].code;
-          }
-        }
-        setSelections(newSels);
-      }
-    } catch (e) {
-      console.error(`Failed to fetch levels from ${fromLevel}:`, e);
-    } finally {
-      const doneLoading = [...loading];
-      for (let i = fromLevel; i < 7; i++) doneLoading[i] = false;
-      setLoading(doneLoading);
-    }
-  }, [options, selections, loading]);
+  const fetchIdRef = useRef(0);
 
   useEffect(() => {
     fetchLevels(0, []);
   }, []);
 
-  const handleSelect = (level: number, value: string) => {
-    const newSelections = [...selections];
-    newSelections[level] = value;
-    for (let i = level + 1; i < 7; i++) {
-      newSelections[i] = '';
-    }
-    setSelections(newSelections);
+  async function fetchLevels(fromLevel: number, parentSelections: string[]) {
+    const thisFetchId = ++fetchIdRef.current;
 
-    const newOptions = [...options];
-    for (let i = level + 1; i < 7; i++) {
-      newOptions[i] = [];
+    setLoading(prev => {
+      const next = [...prev];
+      for (let i = fromLevel; i < 7; i++) next[i] = true;
+      return next;
+    });
+
+    try {
+      const codes = parentSelections.filter(c => c !== '').join(',');
+      const res = await fetch(`/api/levels?state=10&level=${fromLevel}&codes=${codes}`);
+
+      if (!res.ok) throw new Error('API error');
+
+      const data = await res.json();
+
+      if (fetchIdRef.current !== thisFetchId) return;
+
+      if (Array.isArray(data) && data.length > 0) {
+        const parsedAll: LevelOption[][] = [];
+        for (let i = 0; i < data.length; i++) {
+          if (Array.isArray(data[i])) {
+            parsedAll.push(parseLevelData(data[i]));
+          } else {
+            parsedAll.push([]);
+          }
+        }
+
+        setOptions(prev => {
+          const next = [...prev];
+          for (let i = fromLevel; i < 7; i++) {
+            const dataIdx = i - fromLevel;
+            next[i] = dataIdx < parsedAll.length ? parsedAll[dataIdx] : [];
+          }
+          return next;
+        });
+
+        setSelections(prev => {
+          const next = [...prev];
+          for (let i = 0; i < fromLevel; i++) {
+            next[i] = prev[i];
+          }
+          for (let i = fromLevel; i < 7; i++) {
+            const dataIdx = i - fromLevel;
+            const opts = dataIdx < parsedAll.length ? parsedAll[dataIdx] : [];
+            if (opts.length === 1) {
+              next[i] = opts[0].code;
+            } else {
+              next[i] = '';
+            }
+          }
+          return next;
+        });
+      }
+    } catch (e) {
+      console.error(`Failed to fetch levels from ${fromLevel}:`, e);
+    } finally {
+      if (fetchIdRef.current === thisFetchId) {
+        setLoading(prev => {
+          const next = [...prev];
+          for (let i = fromLevel; i < 7; i++) next[i] = false;
+          return next;
+        });
+      }
     }
-    setOptions(newOptions);
+  }
+
+  function handleSelect(level: number, value: string) {
+    setSelections(prev => {
+      const next = [...prev];
+      next[level] = value;
+      for (let i = level + 1; i < 7; i++) next[i] = '';
+      return next;
+    });
+
+    setOptions(prev => {
+      const next = [...prev];
+      for (let i = level + 1; i < 7; i++) next[i] = [];
+      return next;
+    });
 
     if (value) {
-      fetchLevels(level + 1, newSelections.slice(0, level + 1));
+      const currentSels = [...selections];
+      currentSels[level] = value;
+      for (let i = level + 1; i < 7; i++) currentSels[i] = '';
+      fetchLevels(level + 1, currentSels.slice(0, level + 1));
     }
-  };
+  }
 
-  const handleDownload = async () => {
+  async function handleDownload() {
     setDownloading(true);
     setError('');
     setStatus('Resolving GIS code from BhuNaksha...');
@@ -146,7 +169,7 @@ export default function Home() {
     } finally {
       setDownloading(false);
     }
-  };
+  }
 
   const allSelected = selections.every(s => s !== '');
 
