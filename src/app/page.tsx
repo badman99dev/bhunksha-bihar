@@ -1,32 +1,111 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+
+const LEVEL_LABELS = [
+  'District',
+  'Sub Division',
+  'Circle',
+  'Mauza',
+  'Survey Type',
+  'Map Instance',
+  'Sheet No'
+];
+
+interface LevelOption {
+  code: string;
+  label: string;
+}
 
 export default function Home() {
-  const [gisCode, setGisCode] = useState('');
-  const [state, setState] = useState('10');
-  const [loading, setLoading] = useState(false);
+  const [selections, setSelections] = useState<string[]>(Array(7).fill(''));
+  const [options, setOptions] = useState<LevelOption[][]>(Array(7).fill(null).map(() => []));
+  const [loading, setLoading] = useState<boolean[]>(Array(7).fill(false));
+  const [downloading, setDownloading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [ready, setReady] = useState(false);
 
-  const handleDownload = async () => {
-    if (!gisCode.trim()) {
-      setError('Please enter a GIS Code');
-      return;
+  const fetchLevel = useCallback(async (level: number, parentCodes: string[]) => {
+    if (level >= 7) return;
+    
+    setLoading(prev => {
+      const next = [...prev];
+      next[level] = true;
+      return next;
+    });
+
+    try {
+      const codes = parentCodes.filter(c => c !== '').join(',');
+      const res = await fetch(`/api/levels?state=10&level=${level}&codes=${codes}`);
+      const data = await res.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        const levelData = data[0];
+        const opts: LevelOption[] = [];
+        for (const item of levelData) {
+          if (item.extraParms?.hasData) {
+            let label = '';
+            if (item.toStringIsCode) label = item.code;
+            else if (item.toStringIsValue) label = item.value;
+            else label = `${item.code} ${item.value}`;
+            opts.push({ code: item.code, label });
+          }
+        }
+        setOptions(prev => {
+          const next = [...prev];
+          next[level] = opts;
+          return next;
+        });
+      }
+    } catch (e) {
+      console.error(`Failed to fetch level ${level}:`, e);
+    } finally {
+      setLoading(prev => {
+        const next = [...prev];
+        next[level] = false;
+        return next;
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLevel(0, []);
+  }, [fetchLevel]);
+
+  const handleSelect = (level: number, value: string) => {
+    const newSelections = [...selections];
+    newSelections[level] = value;
+    for (let i = level + 1; i < 7; i++) {
+      newSelections[i] = '';
+    }
+    setSelections(newSelections);
+    setOptions(prev => {
+      const next = [...prev];
+      for (let i = level + 1; i < 7; i++) next[i] = [];
+      return next;
+    });
+    setReady(false);
+
+    if (value && level < 6) {
+      fetchLevel(level + 1, newSelections.slice(0, level + 1));
     }
 
-    setLoading(true);
+    if (value && level === 6) {
+      setReady(true);
+    }
+  };
+
+  const handleDownload = async () => {
+    setDownloading(true);
     setError('');
-    setStatus('Downloading low-resolution scan...');
+    setStatus('Resolving map from BhuNaksha server...');
 
     try {
       const response = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gisCode: gisCode.trim(),
-          state,
-        }),
+        body: JSON.stringify({ levels: selections, state: '10' }),
       });
 
       if (!response.ok) {
@@ -34,156 +113,166 @@ export default function Home() {
         throw new Error(errData.error || 'Download failed');
       }
 
-      setStatus('Processing complete! Downloading high-quality map...');
-      
+      setStatus('Processing high-quality map...');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bhunaksha_${gisCode.trim()}.png`;
+      const gisCode = response.headers.get('X-GIS-Code') || 'map';
+      a.download = `bhunaksha_${gisCode}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-
       setStatus('Download complete! ✅');
     } catch (err: any) {
       setError(err.message);
       setStatus('');
     } finally {
-      setLoading(false);
+      setDownloading(false);
     }
   };
+
+  const allSelected = selections.every(s => s !== '');
 
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px',
+      background: '#0a0a0f',
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+      color: '#e0e0e0',
     }}>
       <div style={{
-        background: 'white',
-        borderRadius: '16px',
-        padding: '40px',
-        maxWidth: '500px',
-        width: '100%',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        maxWidth: '640px',
+        margin: '0 auto',
+        padding: '40px 20px',
       }}>
-        <h1 style={{
-          fontSize: '28px',
-          fontWeight: 'bold',
-          textAlign: 'center',
-          marginBottom: '8px',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-        }}>
-          🗺️ BhuNaksha Bihar
-        </h1>
-        <p style={{
-          textAlign: 'center',
-          color: '#666',
-          marginBottom: '32px',
-        }}>
-          High Quality Map Downloader
-        </p>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{
-            display: 'block',
-            marginBottom: '8px',
-            fontWeight: '600',
-            color: '#333',
-          }}>
-            GIS Code
-          </label>
-          <input
-            type="text"
-            value={gisCode}
-            onChange={(e) => setGisCode(e.target.value)}
-            placeholder="e.g. RS07010100582870700"
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              border: '2px solid #e2e8f0',
-              borderRadius: '8px',
-              fontSize: '16px',
-              outline: 'none',
-              transition: 'border-color 0.2s',
-              boxSizing: 'border-box',
-            }}
-            onFocus={(e) => e.target.style.borderColor = '#667eea'}
-            onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-          />
+        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+          <div style={{
+            fontSize: '13px',
+            letterSpacing: '6px',
+            textTransform: 'uppercase',
+            color: '#6b7280',
+            marginBottom: '12px',
+          }}>BhuNaksha Bihar</div>
+          <h1 style={{
+            fontSize: '36px',
+            fontWeight: '700',
+            color: '#fff',
+            margin: '0 0 8px',
+            lineHeight: 1.1,
+          }}>Map Downloader</h1>
+          <p style={{ color: '#6b7280', fontSize: '15px' }}>
+            Select location → Download high-quality village map
+          </p>
         </div>
 
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{
-            display: 'block',
-            marginBottom: '8px',
-            fontWeight: '600',
-            color: '#333',
-          }}>
-            State Code
-          </label>
-          <input
-            type="text"
-            value={state}
-            onChange={(e) => setState(e.target.value)}
-            placeholder="Default: 10"
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              border: '2px solid #e2e8f0',
-              borderRadius: '8px',
-              fontSize: '16px',
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
+        <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: '12px',
+          padding: '28px',
+          marginBottom: '24px',
+        }}>
+          <div style={{
+            fontSize: '11px',
+            letterSpacing: '3px',
+            textTransform: 'uppercase',
+            color: '#4b5563',
+            marginBottom: '20px',
+          }}>Location</div>
+
+          {LEVEL_LABELS.map((label, i) => {
+            const isEnabled = i === 0 || selections[i - 1] !== '';
+            const isLoading = loading[i];
+            const hasOpts = options[i].length > 0;
+
+            return (
+              <div key={i} style={{ marginBottom: i < 6 ? '16px' : 0 }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: isEnabled ? '#9ca3af' : '#374151',
+                  marginBottom: '6px',
+                  transition: 'color 0.2s',
+                }}>
+                  {label}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={selections[i]}
+                    onChange={(e) => handleSelect(i, e.target.value)}
+                    disabled={!isEnabled || isLoading}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      background: isEnabled ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${isEnabled ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'}`,
+                      borderRadius: '8px',
+                      color: isEnabled ? '#e0e0e0' : '#374151',
+                      fontSize: '14px',
+                      outline: 'none',
+                      appearance: 'none',
+                      cursor: isEnabled ? 'pointer' : 'not-allowed',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <option value="">
+                      {isLoading ? 'Loading...' : isEnabled ? `-- Select ${label} --` : ''}
+                    </option>
+                    {options[i].map((opt) => (
+                      <option key={opt.code} value={opt.code}>{opt.label}</option>
+                    ))}
+                  </select>
+                  {isEnabled && hasOpts && (
+                    <div style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      pointerEvents: 'none',
+                      color: '#6b7280',
+                      fontSize: '10px',
+                    }}>▼</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <button
           onClick={handleDownload}
-          disabled={loading}
+          disabled={!allSelected || downloading}
           style={{
             width: '100%',
             padding: '14px',
-            background: loading ? '#a0aec0' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '18px',
+            background: allSelected && !downloading
+              ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
+              : 'rgba(255,255,255,0.05)',
+            color: allSelected && !downloading ? '#fff' : '#374151',
+            border: `1px solid ${allSelected && !downloading ? 'transparent' : 'rgba(255,255,255,0.06)'}`,
+            borderRadius: '10px',
+            fontSize: '15px',
             fontWeight: '600',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
-          }}
-          onMouseEnter={(e) => {
-            if (!loading) {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+            cursor: allSelected && !downloading ? 'pointer' : 'not-allowed',
+            transition: 'all 0.3s',
           }}
         >
-          {loading ? '⏳ Processing...' : '📥 Download High-Quality Map'}
+          {downloading ? '⏳ Processing...' : allSelected ? '📥 Download High-Quality Map' : 'Select all levels to download'}
         </button>
 
         {status && (
           <div style={{
-            marginTop: '20px',
+            marginTop: '16px',
             padding: '12px 16px',
-            background: '#f0f4ff',
+            background: 'rgba(59,130,246,0.1)',
+            border: '1px solid rgba(59,130,246,0.2)',
             borderRadius: '8px',
-            color: '#4c51bf',
+            color: '#60a5fa',
             textAlign: 'center',
+            fontSize: '14px',
           }}>
             {status}
           </div>
@@ -191,31 +280,44 @@ export default function Home() {
 
         {error && (
           <div style={{
-            marginTop: '20px',
+            marginTop: '16px',
             padding: '12px 16px',
-            background: '#fff5f5',
+            background: 'rgba(239,68,68,0.1)',
+            border: '1px solid rgba(239,68,68,0.2)',
             borderRadius: '8px',
-            color: '#e53e3e',
+            color: '#f87171',
             textAlign: 'center',
+            fontSize: '14px',
           }}>
             ❌ {error}
           </div>
         )}
 
         <div style={{
-          marginTop: '32px',
-          padding: '16px',
-          background: '#f7fafc',
-          borderRadius: '8px',
-          fontSize: '14px',
-          color: '#4a5568',
+          marginTop: '36px',
+          padding: '20px',
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid rgba(255,255,255,0.04)',
+          borderRadius: '10px',
         }}>
-          <strong>How it works:</strong>
-          <ol style={{ margin: '8px 0 0 20px', lineHeight: '1.8' }}>
-            <li>Downloads a low-resolution scan</li>
-            <li>Analyzes pixels to find map boundaries</li>
-            <li>Calculates optimal crop area</li>
-            <li>Downloads high-resolution cropped map</li>
+          <div style={{
+            fontSize: '11px',
+            letterSpacing: '2px',
+            textTransform: 'uppercase',
+            color: '#374151',
+            marginBottom: '12px',
+          }}>How it works</div>
+          <ol style={{
+            margin: 0,
+            paddingLeft: '20px',
+            lineHeight: '2',
+            fontSize: '13px',
+            color: '#6b7280',
+          }}>
+            <li>Select District → Sub Div → Circle → Mauza → Survey → Map → Sheet</li>
+            <li>Server auto-resolves GIS code &amp; map extent from BhuNaksha</li>
+            <li>Downloads low-res scan, analyzes pixel content bounds</li>
+            <li>Downloads &amp; crops high-quality 4000px map</li>
           </ol>
         </div>
       </div>

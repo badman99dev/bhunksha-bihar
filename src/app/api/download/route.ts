@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import https from 'https';
 import sharp from 'sharp';
 
-const WMS_BASE = 'https://bhunaksha.bihar.gov.in/WMS';
+const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in/10';
 
 function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY: number; maxX: number; maxY: number }, width: number, height: number, dpi: number) {
   const params = new URLSearchParams({
@@ -22,21 +21,14 @@ function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY:
     HEIGHT: String(height),
     BBOX: `${bbox.minX},${bbox.minY},${bbox.maxX},${bbox.maxY}`
   });
-  return `${WMS_BASE}?${params.toString()}`;
+  return `${BHUNAKSHA}/WMS?${params.toString()}`;
 }
 
-function downloadImage(url: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}`));
-        return;
-      }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-    }).on('error', reject);
-  });
+async function downloadImage(url: string): Promise<Buffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const arrayBuf = await res.arrayBuffer();
+  return Buffer.from(arrayBuf);
 }
 
 async function findContentBounds(buffer: Buffer) {
@@ -90,41 +82,66 @@ function pixelToBBOX(bounds: { minX: number; minY: number; maxX: number; maxY: n
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { gisCode, state, origBBOX, lowResWidth, lowResHeight, highResWidth, dpi } = body;
+    const { levels, state } = body;
 
-    if (!gisCode || !state) {
-      return NextResponse.json({ error: 'gisCode and state required' }, { status: 400 });
+    if (!levels || !Array.isArray(levels) || levels.length < 7) {
+      return NextResponse.json({ error: 'All 7 levels must be selected' }, { status: 400 });
     }
 
-    const bbox = origBBOX || { minX: -425.24, minY: -1046.91, maxX: 1230.10, maxY: 1615.25 };
-    const lowW = lowResWidth || 800;
-    const lowH = lowResHeight || 1280;
-    const highW = highResWidth || 4000;
-    const dpiVal = dpi || 420;
+    const stateCode = state || '10';
+    const gisLevels = levels.join(',') + ',';
 
-    // Step 1: Download low-res
-    const lowUrl = buildWMSUrl(gisCode, state, bbox, lowW, lowH, dpiVal);
+    // Step 1: Get GIS code and BBOX from BhuNaksha
+    const extentBody = new URLSearchParams({
+      state: stateCode,
+      gisLevels,
+      srs: '0'
+    });
+
+    const extentRes = await fetch(`${BHUNAKSHA}/rest/MapInfo/getVVVVExtentGeoref`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: extentBody.toString()
+    });
+
+    const extentData = await extentRes.json();
+
+    if (!extentData.gisCode || !extentData.xmax) {
+      return NextResponse.json({ error: 'Map not found for selected levels' }, { status: 404 });
+    }
+
+    const gisCode = extentData.gisCode;
+    const origBBOX = {
+      minX: extentData.xmin,
+      minY: extentData.ymin,
+      maxX: extentData.xmax,
+      maxY: extentData.ymax
+    };
+
+    // Step 2: Download low-res
+    const lowW = 800, lowH = 1280, dpi = 420;
+    const lowUrl = buildWMSUrl(gisCode, stateCode, origBBOX, lowW, lowH, dpi);
     const lowBuffer = await downloadImage(lowUrl);
 
-    // Step 2: Find content bounds
+    // Step 3: Find content bounds
     const bounds = await findContentBounds(lowBuffer);
 
-    // Step 3: Calculate tight BBOX
-    const tightBBOX = pixelToBBOX(bounds, bbox, bounds.width, bounds.height);
+    // Step 4: Calculate tight BBOX
+    const tightBBOX = pixelToBBOX(bounds, origBBOX, bounds.width, bounds.height);
     const aspectRatio = (tightBBOX.maxX - tightBBOX.minX) / (tightBBOX.maxY - tightBBOX.minY);
+    const highW = 4000;
     const highH = Math.round(highW / aspectRatio);
 
-    // Step 4: Download high-res
-    const highUrl = buildWMSUrl(gisCode, state, tightBBOX, highW, highH, dpiVal);
+    // Step 5: Download high-res
+    const highUrl = buildWMSUrl(gisCode, stateCode, tightBBOX, highW, highH, dpi);
     const highBuffer = await downloadImage(highUrl);
 
     return new NextResponse(highBuffer.buffer as ArrayBuffer, {
       headers: {
         'Content-Type': 'image/png',
         'Content-Disposition': `attachment; filename="bhunaksha_${gisCode}.png"`,
-        'X-Tight-BBOX': JSON.stringify(tightBBOX),
+        'X-GIS-Code': gisCode,
         'X-Image-Dimensions': `${highW}x${highH}`,
-        'X-Content-Pixels': String(bounds.contentPixels)
       }
     });
 
