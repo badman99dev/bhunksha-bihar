@@ -1,6 +1,20 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import {
+  Download,
+  Radio,
+  Scissors,
+  Paintbrush,
+  Zap,
+  CheckCircle2,
+  XCircle,
+  Save,
+  RefreshCw,
+  ChevronDown,
+  Loader2,
+  Map,
+} from 'lucide-react';
 
 const LEVEL_LABELS = ['District', 'Sub Division', 'Circle', 'Mauza', 'Survey Type', 'Map Instance', 'Sheet No'];
 
@@ -8,8 +22,8 @@ const RESOLUTION_OPTIONS = [
   { value: 800, label: 'Low', sub: '800px', warn: false },
   { value: 2000, label: '2K', sub: '2000px', warn: false },
   { value: 4000, label: '4K', sub: '4000px', warn: false },
-  { value: 8000, label: '8K', sub: '8000px', warn: true, msg: '⚠️ Slow download' },
-  { value: 16000, label: '16K', sub: '16000px', warn: true, msg: '⚠️ Very slow! May fail' },
+  { value: 8000, label: '8K', sub: '8000px', warn: true, msg: 'Slow download' },
+  { value: 16000, label: '16K', sub: '16000px', warn: true, msg: 'Very slow! May fail' },
 ];
 
 const DPI_OPTIONS = [
@@ -39,11 +53,47 @@ function parseLevelData(arr: any[]): LevelOption[] {
 type Phase = 'idle' | 'fetching' | 'cropping' | 'removing' | 'upscaling' | 'ready' | 'error';
 
 const STEPS = [
-  { key: 'fetching', num: '1', label: 'Fetch Map' },
-  { key: 'cropping', num: '2', label: 'Smart Crop' },
-  { key: 'removing', num: '3', label: 'Remove BG' },
-  { key: 'upscaling', num: '4', label: 'Upscale' },
+  { key: 'fetching', num: '1', label: 'Fetch Map', icon: Radio },
+  { key: 'cropping', num: '2', label: 'Smart Crop', icon: Scissors },
+  { key: 'removing', num: '3', label: 'Remove BG', icon: Paintbrush },
+  { key: 'upscaling', num: '4', label: 'Upscale', icon: Zap },
 ];
+
+function IconWrapper({ children, color, size = 16, spin = false, pulse = false }: { children: React.ReactNode; color?: string; size?: number; spin?: boolean; pulse?: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: '8px',
+      animation: spin ? 'iconSpin 1s linear infinite' : pulse ? 'iconPulse 1.5s ease-in-out infinite' : 'none',
+      verticalAlign: 'middle',
+    }}>
+      {children}
+    </span>
+  );
+}
+
+function SparkleParticle({ top, left, right, bottom, delay, size }: { top?: string; left?: string; right?: string; bottom?: string; delay?: string; size?: number }) {
+  return (
+    <div style={{
+      position: 'absolute',
+      top, left, right, bottom,
+      width: `${size || 6}px`,
+      height: `${size || 6}px`,
+      animation: `cssSparkle 2s ease-out infinite ${delay || '0s'}`,
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        width: '100%',
+        height: '100%',
+        borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(59,130,246,0.6) 40%, transparent 70%)',
+        boxShadow: '0 0 6px rgba(59,130,246,0.6), 0 0 12px rgba(139,92,246,0.3)',
+      }} />
+    </div>
+  );
+}
 
 export default function Home() {
   const [selections, setSelections] = useState<string[]>(Array(7).fill(''));
@@ -130,7 +180,6 @@ export default function Home() {
       const resLabel = RESOLUTION_OPTIONS.find(r => r.value === resolution)?.label || `${resolution}px`;
       setUpscaleText(resLabel);
 
-      // Animate percentage
       for (let p = 0; p <= 100; p += 3) {
         setUpscalePct(p);
         await sleep(50);
@@ -177,7 +226,7 @@ export default function Home() {
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <div style={{ fontSize: '13px', letterSpacing: '6px', textTransform: 'uppercase', color: '#6b7280', marginBottom: '12px' }}>BhuNaksha Bihar</div>
           <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#fff', margin: '0 0 8px', lineHeight: 1.1 }}>Map Downloader</h1>
-          <p style={{ color: '#6b7280', fontSize: '15px' }}>Select location → Download high-quality village map</p>
+          <p style={{ color: '#6b7280', fontSize: '15px' }}>Select location &rarr; Download high-quality village map</p>
         </div>
 
         {/* Location */}
@@ -192,15 +241,20 @@ export default function Home() {
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: en ? '#9ca3af' : '#374151', marginBottom: '6px' }}>{label}</label>
                 <div style={{ position: 'relative' }}>
                   <select value={selections[i]} onChange={e => handleSelect(i, e.target.value)} disabled={!en || lb} style={{
-                    width: '100%', padding: '10px 14px',
+                    width: '100%', padding: '10px 36px 10px 14px',
                     background: en ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
                     border: `1px solid ${en ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'}`,
                     borderRadius: '8px', color: en ? '#e0e0e0' : '#374151', fontSize: '14px', outline: 'none', appearance: 'none', cursor: en ? 'pointer' : 'not-allowed',
+                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                   }}>
                     <option value="">{lb ? 'Loading...' : en && ho ? `-- Select ${label} --` : ''}</option>
                     {options[i].map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
                   </select>
-                  {en && ho && <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#6b7280', fontSize: '10px' }}>▼</div>}
+                  {en && ho && (
+                    <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#6b7280', display: 'flex' }}>
+                      <ChevronDown size={14} />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -224,7 +278,7 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            {selectedRes?.warn && <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: '6px', color: '#fbbf24', fontSize: '12px' }}>{selectedRes.msg}</div>}
+            {selectedRes?.warn && <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: '6px', color: '#fbbf24', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Zap size={12} /> {selectedRes.msg}</div>}
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#9ca3af', marginBottom: '10px' }}>DPI</label>
@@ -251,8 +305,9 @@ export default function Home() {
             color: allSelected ? '#fff' : '#374151',
             border: `1px solid ${allSelected ? 'transparent' : 'rgba(255,255,255,0.06)'}`,
             borderRadius: '10px', fontSize: '15px', fontWeight: '600', cursor: allSelected ? 'pointer' : 'not-allowed', transition: 'all 0.3s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
           }}>
-            {allSelected ? `📥 Generate ${selectedRes?.label || ''} Map` : 'Select all levels to continue'}
+            {allSelected ? (<><Download size={18} /> Generate {selectedRes?.label || ''} Map</>) : 'Select all levels to continue'}
           </button>
         )}
 
@@ -272,6 +327,7 @@ export default function Home() {
             <div style={{ padding: '16px 20px 12px' }}>
               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                 {STEPS.map((step, idx) => {
+                  const StepIcon = step.icon;
                   const isActive = idx === activeStepIdx;
                   const isDone = idx < activeStepIdx || phase === 'ready';
                   const isPending = idx > activeStepIdx;
@@ -285,11 +341,13 @@ export default function Home() {
                         ...(isActive ? { animation: 'shimmer 1.5s ease-in-out infinite' } : {}),
                       }} />
                       <div style={{
+                        display: 'flex', alignItems: 'center', gap: '3px',
                         fontSize: '10px', fontWeight: '600',
                         color: isDone ? '#10b981' : isActive ? '#60a5fa' : '#374151',
                         transition: 'color 0.3s',
                         letterSpacing: '0.5px',
                       }}>
+                        <StepIcon size={10} style={{ opacity: isDone ? 1 : isActive ? 0.9 : 0.3 }} />
                         {step.label}
                       </div>
                     </div>
@@ -305,13 +363,33 @@ export default function Home() {
                   fontSize: '15px', fontWeight: '600',
                   color: phase === 'ready' ? '#34d399' : phase === 'error' ? '#f87171' : '#e0e0e0',
                   transition: 'color 0.3s',
+                  display: 'flex', alignItems: 'center',
                 }}>
-                  {phase === 'fetching' && '📡 Fetching map from BhuNaksha...'}
-                  {phase === 'cropping' && `✂️ Smart crop — ${analyzeData?.blankPct}% blank removed`}
-                  {phase === 'removing' && '🎨 Removing background...'}
-                  {phase === 'upscaling' && `⚡ Upscaling to ${upscaleText}...`}
-                  {phase === 'ready' && '✅ Map ready!'}
-                  {phase === 'error' && `❌ ${errorMsg}`}
+                  {phase === 'fetching' && (
+                    <><IconWrapper color="#3b82f6" spin><Radio size={16} style={{ color: '#3b82f6' }} /></IconWrapper>
+                    <span style={{ background: 'linear-gradient(90deg, #60a5fa, #93c5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Fetching map from BhuNaksha...</span></>
+                  )}
+                  {phase === 'cropping' && (
+                    <><IconWrapper color="#3b82f6"><Scissors size={16} style={{ color: '#818cf8' }} /></IconWrapper>
+                    <span style={{ background: 'linear-gradient(90deg, #818cf8, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Smart crop</span>
+                    <span style={{ color: '#6b7280', marginLeft: '6px', fontSize: '13px' }}>&mdash; {analyzeData?.blankPct}% blank removed</span></>
+                  )}
+                  {phase === 'removing' && (
+                    <><IconWrapper color="#10b981" pulse><Paintbrush size={16} style={{ color: '#10b981' }} /></IconWrapper>
+                    <span style={{ background: 'linear-gradient(90deg, #10b981, #34d399)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Removing background...</span></>
+                  )}
+                  {phase === 'upscaling' && (
+                    <><IconWrapper color="#8b5cf6" spin><Zap size={16} style={{ color: '#8b5cf6' }} /></IconWrapper>
+                    <span style={{ background: 'linear-gradient(90deg, #8b5cf6, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Upscaling to {upscaleText}...</span></>
+                  )}
+                  {phase === 'ready' && (
+                    <><IconWrapper color="#10b981"><CheckCircle2 size={16} style={{ color: '#10b981' }} /></IconWrapper>
+                    <span style={{ background: 'linear-gradient(90deg, #10b981, #34d399)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: '700' }}>Map ready!</span></>
+                  )}
+                  {phase === 'error' && (
+                    <><IconWrapper color="#f87171"><XCircle size={16} style={{ color: '#f87171' }} /></IconWrapper>
+                    <span style={{ color: '#f87171' }}>{errorMsg}</span></>
+                  )}
                 </div>
                 {phase === 'upscaling' && (
                   <div style={{ marginTop: '8px' }}>
@@ -323,9 +401,10 @@ export default function Home() {
                     }}>
                       <div style={{
                         width: `${upscalePct}%`, height: '100%',
-                        background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                        background: 'linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899)',
                         borderRadius: '2px',
                         transition: 'width 0.1s linear',
+                        boxShadow: '0 0 8px rgba(139,92,246,0.4)',
                       }} />
                     </div>
                     <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{upscalePct}%</div>
@@ -333,13 +412,7 @@ export default function Home() {
                 )}
               </div>
               {phase !== 'ready' && phase !== 'error' && (
-                <div style={{
-                  width: '18px', height: '18px', flexShrink: 0,
-                  border: '2px solid rgba(59,130,246,0.2)',
-                  borderTopColor: '#3b82f6',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite',
-                }} />
+                <Loader2 size={18} style={{ color: '#3b82f6', animation: 'iconSpin 0.8s linear infinite', flexShrink: 0 }} />
               )}
             </div>
 
@@ -380,7 +453,7 @@ export default function Home() {
                 }} />
               )}
 
-              {/* Low-res preview - ALWAYS blurred from step 2 onwards */}
+              {/* Low-res preview */}
               {analyzeData?.lowResImage && phase !== 'ready' && (
                 <img
                   src={analyzeData.lowResImage}
@@ -416,7 +489,9 @@ export default function Home() {
                     fontSize: '13px', color: 'rgba(255,255,255,0.4)',
                     marginTop: '8px',
                     animation: 'fadeInOut 2s ease-in-out infinite',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                   }}>
+                    <Zap size={12} style={{ color: 'rgba(139,92,246,0.6)' }} />
                     AI Enhancement in Progress
                   </div>
                 </div>
@@ -429,10 +504,13 @@ export default function Home() {
                   textAlign: 'center', zIndex: 20, pointerEvents: 'none',
                 }}>
                   <div style={{
-                    fontSize: '24px', fontWeight: '700', color: '#10b981',
+                    fontSize: '20px', fontWeight: '700',
+                    color: '#10b981',
                     animation: 'textPulse 1s ease-in-out infinite',
+                    display: 'flex', alignItems: 'center', gap: '8px',
                   }}>
-                    🎨 Cleaning
+                    <Paintbrush size={22} style={{ animation: 'iconSpin 2s linear infinite' }} />
+                    <span style={{ background: 'linear-gradient(90deg, #10b981, #6ee7b7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Cleaning</span>
                   </div>
                 </div>
               )}
@@ -445,9 +523,12 @@ export default function Home() {
                     border: '3px solid rgba(59,130,246,0.15)',
                     borderTopColor: '#3b82f6',
                     borderRadius: '50%',
-                    animation: 'spin 0.7s linear infinite',
+                    animation: 'iconSpin 0.7s linear infinite',
                   }} />
-                  <div style={{ color: '#6b7280', fontSize: '14px' }}>Connecting to BhuNaksha server...</div>
+                  <div style={{ color: '#6b7280', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <Map size={14} style={{ color: '#4b5563' }} />
+                    Connecting to BhuNaksha server...
+                  </div>
                   <div style={{
                     marginTop: '12px', width: '120px', height: '2px',
                     background: 'rgba(59,130,246,0.1)', borderRadius: '1px',
@@ -460,7 +541,7 @@ export default function Home() {
 
               {/* Final high-res result */}
               {phase === 'ready' && highResBlob && (
-                <div style={{ animation: 'revealMap 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                <div style={{ animation: 'revealMap 0.8s cubic-bezier(0.16, 1, 0.3, 1)', position: 'relative' }}>
                   <img
                     src={URL.createObjectURL(highResBlob)}
                     style={{
@@ -471,10 +552,13 @@ export default function Home() {
                       boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
                     }}
                   />
-                  {/* Sparkle particles */}
-                  <div style={{ position: 'absolute', top: '10%', left: '15%', fontSize: '16px', animation: 'sparkle 2s ease-out infinite' }}>✨</div>
-                  <div style={{ position: 'absolute', top: '20%', right: '20%', fontSize: '12px', animation: 'sparkle 2s ease-out infinite 0.5s' }}>✨</div>
-                  <div style={{ position: 'absolute', bottom: '25%', left: '25%', fontSize: '14px', animation: 'sparkle 2s ease-out infinite 1s' }}>✨</div>
+                  {/* CSS Sparkle Particles */}
+                  <SparkleParticle top="10%" left="15%" delay="0s" size={5} />
+                  <SparkleParticle top="20%" right="20%" delay="0.5s" size={4} />
+                  <SparkleParticle bottom="25%" left="25%" delay="1s" size={6} />
+                  <SparkleParticle top="35%" left="60%" delay="1.5s" size={3} />
+                  <SparkleParticle bottom="15%" right="30%" delay="0.8s" size={5} />
+                  <SparkleParticle top="50%" left="10%" delay="1.2s" size={4} />
                 </div>
               )}
             </div>
@@ -489,8 +573,10 @@ export default function Home() {
                   fontSize: '17px', fontWeight: '700', cursor: 'pointer',
                   transition: 'all 0.3s',
                   boxShadow: '0 4px 20px rgba(16,185,129,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
                 }}>
-                  💾 Download {selectedRes?.label || ''} Map
+                  <Save size={20} />
+                  Download {selectedRes?.label || ''} Map
                 </button>
               </div>
             )}
@@ -502,8 +588,10 @@ export default function Home() {
                   width: '100%', padding: '12px',
                   background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
                   borderRadius: '8px', color: '#f87171', fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 }}>
-                  🔄 Retry
+                  <RefreshCw size={14} />
+                  Retry
                 </button>
               </div>
             )}
@@ -516,14 +604,18 @@ export default function Home() {
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
             borderRadius: '8px', color: '#6b7280', fontSize: '14px', cursor: 'pointer',
           }}>
-            ← Download another map
+            &larr; Download another map
           </button>
         )}
       </div>
 
       {/* All CSS Animations */}
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes iconSpin { to { transform: rotate(360deg); } }
+        @keyframes iconPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(0.9); }
+        }
         @keyframes shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         @keyframes scanLine {
           0% { top: 0; opacity: 0; }
@@ -555,9 +647,11 @@ export default function Home() {
           from { opacity: 0; transform: translateY(15px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes sparkle {
+        @keyframes cssSparkle {
           0% { opacity: 0; transform: scale(0) rotate(0deg); }
-          50% { opacity: 1; transform: scale(1) rotate(180deg); }
+          20% { opacity: 1; transform: scale(1.2) rotate(72deg); }
+          50% { opacity: 0.8; transform: scale(0.8) rotate(180deg); }
+          80% { opacity: 0.4; transform: scale(1.1) rotate(288deg); }
           100% { opacity: 0; transform: scale(0) rotate(360deg); }
         }
       `}</style>
