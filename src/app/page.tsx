@@ -55,6 +55,7 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState('');
   const [analyzeData, setAnalyzeData] = useState<any>(null);
   const [highResBlob, setHighResBlob] = useState<Blob | null>(null);
+  const [googleMapsUrl, setGoogleMapsUrl] = useState<string>('');
   const [cropStyle, setCropStyle] = useState<React.CSSProperties>({});
   const [bgBlack, setBgBlack] = useState(false);
   const [upscaleText, setUpscaleText] = useState('');
@@ -99,6 +100,7 @@ export default function Home() {
   function resetPreview() {
     setPhase('idle'); setAnalyzeData(null); setHighResBlob(null);
     setBgBlack(false); setCropStyle({}); setUpscaleText(''); setUpscalePct(0); setErrorMsg('');
+    setGoogleMapsUrl('');
   }
 
   async function handleStart() {
@@ -113,6 +115,7 @@ export default function Home() {
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Analyze failed'); }
       const data = await res.json();
       setAnalyzeData(data);
+      if (data.googleMapsUrl) setGoogleMapsUrl(data.googleMapsUrl);
 
       setPhase('cropping');
       await sleep(600);
@@ -489,9 +492,23 @@ export default function Home() {
                   fontSize: '17px', fontWeight: '700', cursor: 'pointer',
                   transition: 'all 0.3s',
                   boxShadow: '0 4px 20px rgba(16,185,129,0.3)',
+                  marginBottom: '10px',
                 }}>
                   💾 Download {selectedRes?.label || ''} Map
                 </button>
+                {googleMapsUrl && (
+                  <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" style={{
+                    display: 'block', width: '100%', padding: '12px',
+                    background: 'rgba(66,133,244,0.1)', border: '1px solid rgba(66,133,244,0.3)',
+                    borderRadius: '10px', color: '#60a5fa', fontSize: '14px', fontWeight: '600',
+                    textAlign: 'center', textDecoration: 'none', transition: 'all 0.3s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(66,133,244,0.2)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(66,133,244,0.1)'; }}
+                  >
+                    📍 View on Google Maps ({analyzeData?.centerLatLng?.lat.toFixed(4)}, {analyzeData?.centerLatLng?.lng.toFixed(4)})
+                  </a>
+                )}
               </div>
             )}
 
