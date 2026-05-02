@@ -12,8 +12,11 @@ import {
   Save,
   RefreshCw,
   ChevronDown,
+  ChevronUp,
   Loader2,
   Map,
+  Search,
+  X,
 } from 'lucide-react';
 
 const LEVEL_LABELS = ['District', 'Sub Division', 'Circle', 'Mauza', 'Survey Type', 'Map Instance', 'Sheet No'];
@@ -95,6 +98,159 @@ function SparkleParticle({ top, left, right, bottom, delay, size }: { top?: stri
   );
 }
 
+function SearchableSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  loading,
+  placeholder,
+  isOpen,
+  onToggle,
+  onClose,
+}: {
+  value: string;
+  options: LevelOption[];
+  onChange: (val: string) => void;
+  disabled: boolean;
+  loading: boolean;
+  placeholder: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) onClose();
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSearch('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
+  const filtered = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
+  const selectedOpt = options.find(o => o.code === value);
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={disabled || loading}
+        style={{
+          width: '100%', padding: '10px 14px',
+          background: !disabled ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
+          border: `1px solid ${isOpen ? 'rgba(59,130,246,0.5)' : !disabled ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'}`,
+          borderRadius: '8px', color: !disabled ? '#e0e0e0' : '#374151', fontSize: '14px', outline: 'none',
+          cursor: !disabled ? 'pointer' : 'not-allowed',
+          transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          boxShadow: isOpen ? '0 0 0 2px rgba(59,130,246,0.15)' : 'none',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {loading ? 'Loading...' : selectedOpt ? selectedOpt.label : (disabled ? '' : placeholder)}
+        </span>
+        {!disabled && !loading && (
+          isOpen ? <ChevronUp size={14} style={{ color: '#6b7280', flexShrink: 0 }} /> : <ChevronDown size={14} style={{ color: '#6b7280', flexShrink: 0 }} />
+        )}
+        {loading && <Loader2 size={14} style={{ color: '#3b82f6', animation: 'iconSpin 1s linear infinite', flexShrink: 0 }} />}
+      </button>
+
+      {isOpen && !disabled && !loading && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          marginTop: '4px',
+          background: '#161622',
+          border: '1px solid rgba(59,130,246,0.3)',
+          borderRadius: '10px',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(59,130,246,0.1)',
+          overflow: 'hidden',
+          animation: 'dropIn 0.15s ease-out',
+        }}>
+          <div style={{
+            padding: '8px 10px',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'rgba(255,255,255,0.02)',
+          }}>
+            <Search size={14} style={{ color: '#6b7280', flexShrink: 0 }} />
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search..."
+              style={{
+                flex: 1, background: 'none', border: 'none', outline: 'none',
+                color: '#e0e0e0', fontSize: '13px', padding: '4px 0',
+                fontFamily: 'inherit',
+              }}
+            />
+            {search && (
+              <button onClick={() => { setSearch(''); inputRef.current?.focus(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                <X size={12} style={{ color: '#6b7280' }} />
+              </button>
+            )}
+          </div>
+
+          <div ref={listRef} className="custom-scroll" style={{
+            maxHeight: '220px', overflowY: 'auto',
+            scrollbarWidth: 'thin', scrollbarColor: 'rgba(59,130,246,0.3) transparent',
+          }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: '#4b5563', fontSize: '13px' }}>
+                No results found
+              </div>
+            ) : (
+              filtered.map(o => (
+                <button
+                  key={o.code}
+                  onClick={() => { onChange(o.code); onClose(); }}
+                  style={{
+                    display: 'block', width: '100%', padding: '9px 14px',
+                    background: o.code === value ? 'rgba(59,130,246,0.12)' : 'transparent',
+                    border: 'none', color: o.code === value ? '#60a5fa' : '#c0c0c0',
+                    fontSize: '13px', textAlign: 'left', cursor: 'pointer',
+                    transition: 'background 0.15s, color 0.15s',
+                    fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => { if (o.code !== value) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#fff'; } }}
+                  onMouseLeave={e => { if (o.code !== value) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#c0c0c0'; } }}
+                >
+                  {o.label}
+                </button>
+              ))
+            )}
+          </div>
+
+          {options.length > 0 && (
+            <div style={{
+              padding: '6px 12px', borderTop: '1px solid rgba(255,255,255,0.04)',
+              fontSize: '11px', color: '#4b5563', display: 'flex', justifyContent: 'space-between',
+            }}>
+              <span>{filtered.length} of {options.length}</span>
+              {search && <span style={{ color: '#3b82f6' }}>Filtered</span>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [selections, setSelections] = useState<string[]>(Array(7).fill(''));
   const [options, setOptions] = useState<LevelOption[][]>(Array(7).fill(null).map(() => []));
@@ -110,6 +266,7 @@ export default function Home() {
   const [upscaleText, setUpscaleText] = useState('');
   const [upscalePct, setUpscalePct] = useState(0);
   const fetchIdRef = useRef(0);
+  const [openDropdown, setOpenDropdown] = useState<number | null>(null);
 
   useEffect(() => { fetchLevels(0, []); }, []);
 
@@ -138,6 +295,7 @@ export default function Home() {
 
   function handleSelect(level: number, value: string) {
     resetPreview();
+    setOpenDropdown(null);
     setSelections(p => { const n = [...p]; n[level] = value; for (let i = level + 1; i < 7; i++) n[i] = ''; return n; });
     setOptions(p => { const n = [...p]; for (let i = level + 1; i < 7; i++) n[i] = []; return n; });
     if (value) {
@@ -239,23 +397,17 @@ export default function Home() {
             return (
               <div key={i} style={{ marginBottom: i < 6 ? '16px' : 0 }}>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: en ? '#9ca3af' : '#374151', marginBottom: '6px' }}>{label}</label>
-                <div style={{ position: 'relative' }}>
-                  <select value={selections[i]} onChange={e => handleSelect(i, e.target.value)} disabled={!en || lb} style={{
-                    width: '100%', padding: '10px 36px 10px 14px',
-                    background: en ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
-                    border: `1px solid ${en ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'}`,
-                    borderRadius: '8px', color: en ? '#e0e0e0' : '#374151', fontSize: '14px', outline: 'none', appearance: 'none', cursor: en ? 'pointer' : 'not-allowed',
-                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                  }}>
-                    <option value="">{lb ? 'Loading...' : en && ho ? `-- Select ${label} --` : ''}</option>
-                    {options[i].map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
-                  </select>
-                  {en && ho && (
-                    <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#6b7280', display: 'flex' }}>
-                      <ChevronDown size={14} />
-                    </div>
-                  )}
-                </div>
+                <SearchableSelect
+                  value={selections[i]}
+                  options={options[i]}
+                  onChange={val => handleSelect(i, val)}
+                  disabled={!en || lb}
+                  loading={lb}
+                  placeholder={en && ho ? `Select ${label}` : ''}
+                  isOpen={openDropdown === i}
+                  onToggle={() => setOpenDropdown(openDropdown === i ? null : i)}
+                  onClose={() => setOpenDropdown(null)}
+                />
               </div>
             );
           })}
@@ -612,6 +764,10 @@ export default function Home() {
       {/* All CSS Animations */}
       <style>{`
         @keyframes iconSpin { to { transform: rotate(360deg); } }
+        @keyframes dropIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
         @keyframes iconPulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.6; transform: scale(0.9); }
@@ -654,6 +810,10 @@ export default function Home() {
           80% { opacity: 0.4; transform: scale(1.1) rotate(288deg); }
           100% { opacity: 0; transform: scale(0) rotate(360deg); }
         }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.3); border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(59,130,246,0.5); }
       `}</style>
     </div>
   );
