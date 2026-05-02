@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in/10';
+const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in';
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,11 +18,20 @@ export async function GET(req: NextRequest) {
 
     const res = await fetch(`${BHUNAKSHA}/rest/Levels/ListsAfterLevel`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': `${BHUNAKSHA}/${state}/indexmain.jsp`,
+      },
       body: body.toString()
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return NextResponse.json({ error: 'Invalid response from BhuNaksha', raw: text.substring(0, 200) }, { status: 502 });
+    }
     return NextResponse.json(data);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

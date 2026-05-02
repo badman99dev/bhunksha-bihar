@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 
-const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in/10';
+const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in';
 
 function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY: number; maxX: number; maxY: number }, width: number, height: number, dpi: number) {
   const params = new URLSearchParams({
@@ -21,11 +21,13 @@ function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY:
     HEIGHT: String(height),
     BBOX: `${bbox.minX},${bbox.minY},${bbox.maxX},${bbox.maxY}`
   });
-  return `${BHUNAKSHA}/WMS?${params.toString()}`;
+  return `${BHUNAKSHA}/${state}/WMS?${params.toString()}`;
 }
 
 async function downloadImage(url: string): Promise<Buffer> {
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: { 'Referer': `${BHUNAKSHA}/10/indexmain.jsp` }
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const arrayBuf = await res.arrayBuffer();
   return Buffer.from(arrayBuf);
@@ -100,7 +102,10 @@ export async function POST(req: NextRequest) {
 
     const extentRes = await fetch(`${BHUNAKSHA}/rest/MapInfo/getVVVVExtentGeoref`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': `${BHUNAKSHA}/${stateCode}/indexmain.jsp`,
+      },
       body: extentBody.toString()
     });
 
