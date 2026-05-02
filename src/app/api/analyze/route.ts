@@ -3,13 +3,6 @@ import sharp from 'sharp';
 
 const BHUNAKSHA = 'https://bhunaksha.bihar.gov.in';
 
-function mercatorToLatLng(x: number, y: number): { lat: number; lng: number } {
-  const R = 6378137;
-  const lng = (x / R) * (180 / Math.PI);
-  const lat = (2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * (180 / Math.PI);
-  return { lat, lng };
-}
-
 function buildWMSUrl(gisCode: string, state: string, bbox: { minX: number; minY: number; maxX: number; maxY: number }, width: number, height: number, dpi: number) {
   const params = new URLSearchParams({
     SERVICE: 'WMS',
@@ -121,12 +114,6 @@ export async function POST(req: NextRequest) {
       bottom: (((height - bounds.maxY) / height) * 100).toFixed(1),
     };
 
-    const centerLatLng = mercatorToLatLng(
-      (tightBBOX.minX + tightBBOX.maxX) / 2,
-      (tightBBOX.minY + tightBBOX.maxY) / 2
-    );
-    const googleMapsUrl = `https://www.google.com/maps?q=${centerLatLng.lat.toFixed(6)},${centerLatLng.lng.toFixed(6)}&z=16`;
-
     return NextResponse.json({
       gisCode,
       lowResImage: lowResBase64,
@@ -136,8 +123,6 @@ export async function POST(req: NextRequest) {
       tightBBOX,
       origBBOX,
       aspectRatio: ((tightBBOX.maxX - tightBBOX.minX) / (tightBBOX.maxY - tightBBOX.minY)).toFixed(4),
-      googleMapsUrl,
-      centerLatLng,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
