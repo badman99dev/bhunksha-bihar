@@ -17,6 +17,20 @@ interface LevelOption {
   label: string;
 }
 
+function parseLevelData(levelArr: any[]): LevelOption[] {
+  const opts: LevelOption[] = [];
+  for (const item of levelArr) {
+    if (item.extraParms?.hasData) {
+      let label = '';
+      if (item.toStringIsCode) label = item.code;
+      else if (item.toStringIsValue) label = item.value;
+      else label = `${item.code} ${item.value}`;
+      opts.push({ code: item.code, label });
+    }
+  }
+  return opts;
+}
+
 export default function Home() {
   const [selections, setSelections] = useState<string[]>(Array(7).fill(''));
   const [options, setOptions] = useState<LevelOption[][]>(Array(7).fill(null).map(() => []));
@@ -24,54 +38,59 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
-  const [ready, setReady] = useState(false);
 
-  const fetchLevel = useCallback(async (level: number, parentCodes: string[]) => {
-    if (level >= 7) return;
-    
-    setLoading(prev => {
-      const next = [...prev];
-      next[level] = true;
-      return next;
-    });
+  const fetchLevels = useCallback(async (fromLevel: number, parentSelections: string[]) => {
+    const newLoading = [...loading];
+    for (let i = fromLevel; i < 7; i++) newLoading[i] = true;
+    setLoading(newLoading);
 
     try {
-      const codes = parentCodes.filter(c => c !== '').join(',');
-      const res = await fetch(`/api/levels?state=10&level=${level}&codes=${codes}`);
+      const codes = parentSelections.filter(c => c !== '').join(',');
+      const res = await fetch(`/api/levels?state=10&level=${fromLevel}&codes=${codes}`);
       const data = await res.json();
 
       if (Array.isArray(data) && data.length > 0) {
-        const levelData = data[0];
-        const opts: LevelOption[] = [];
-        for (const item of levelData) {
-          if (item.extraParms?.hasData) {
-            let label = '';
-            if (item.toStringIsCode) label = item.code;
-            else if (item.toStringIsValue) label = item.value;
-            else label = `${item.code} ${item.value}`;
-            opts.push({ code: item.code, label });
+        const newOptions = [...options];
+        for (let i = fromLevel; i < 7; i++) {
+          const dataIdx = i - fromLevel;
+          if (dataIdx < data.length && Array.isArray(data[dataIdx])) {
+            const parsed = parseLevelData(data[dataIdx]);
+            newOptions[i] = parsed;
+            if (parsed.length === 1) {
+              const newSels = [...parentSelections];
+              for (let j = fromLevel; j < i; j++) {
+                if (!newSels[j] && newOptions[j].length > 0) {
+                  newSels[j] = newOptions[j][0].code;
+                }
+              }
+              newSels[i] = parsed[0].code;
+            }
+          } else {
+            newOptions[i] = [];
           }
         }
-        setOptions(prev => {
-          const next = [...prev];
-          next[level] = opts;
-          return next;
-        });
+        setOptions(newOptions);
+
+        const newSels = [...selections];
+        for (let i = fromLevel; i < 7; i++) {
+          if (newOptions[i].length === 1) {
+            newSels[i] = newOptions[i][0].code;
+          }
+        }
+        setSelections(newSels);
       }
     } catch (e) {
-      console.error(`Failed to fetch level ${level}:`, e);
+      console.error(`Failed to fetch levels from ${fromLevel}:`, e);
     } finally {
-      setLoading(prev => {
-        const next = [...prev];
-        next[level] = false;
-        return next;
-      });
+      const doneLoading = [...loading];
+      for (let i = fromLevel; i < 7; i++) doneLoading[i] = false;
+      setLoading(doneLoading);
     }
-  }, []);
+  }, [options, selections, loading]);
 
   useEffect(() => {
-    fetchLevel(0, []);
-  }, [fetchLevel]);
+    fetchLevels(0, []);
+  }, []);
 
   const handleSelect = (level: number, value: string) => {
     const newSelections = [...selections];
@@ -80,26 +99,22 @@ export default function Home() {
       newSelections[i] = '';
     }
     setSelections(newSelections);
-    setOptions(prev => {
-      const next = [...prev];
-      for (let i = level + 1; i < 7; i++) next[i] = [];
-      return next;
-    });
-    setReady(false);
 
-    if (value && level < 6) {
-      fetchLevel(level + 1, newSelections.slice(0, level + 1));
+    const newOptions = [...options];
+    for (let i = level + 1; i < 7; i++) {
+      newOptions[i] = [];
     }
+    setOptions(newOptions);
 
-    if (value && level === 6) {
-      setReady(true);
+    if (value) {
+      fetchLevels(level + 1, newSelections.slice(0, level + 1));
     }
   };
 
   const handleDownload = async () => {
     setDownloading(true);
     setError('');
-    setStatus('Resolving map from BhuNaksha server...');
+    setStatus('Resolving GIS code from BhuNaksha...');
 
     try {
       const response = await fetch('/api/download', {
@@ -113,7 +128,7 @@ export default function Home() {
         throw new Error(errData.error || 'Download failed');
       }
 
-      setStatus('Processing high-quality map...');
+      setStatus('Downloading high-quality map...');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -124,7 +139,7 @@ export default function Home() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      setStatus('Download complete! ✅');
+      setStatus(`Done! GIS: ${gisCode} ✅`);
     } catch (err: any) {
       setError(err.message);
       setStatus('');
@@ -219,7 +234,7 @@ export default function Home() {
                     }}
                   >
                     <option value="">
-                      {isLoading ? 'Loading...' : isEnabled ? `-- Select ${label} --` : ''}
+                      {isLoading ? 'Loading...' : isEnabled && hasOpts ? `-- Select ${label} --` : ''}
                     </option>
                     {options[i].map((opt) => (
                       <option key={opt.code} value={opt.code}>{opt.label}</option>

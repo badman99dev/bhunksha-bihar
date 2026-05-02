@@ -7,7 +7,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const state = searchParams.get('state') || '10';
     const level = searchParams.get('level') || '0';
-    const codes = searchParams.get('codes') || '';
+    const rawCodes = searchParams.get('codes') || '';
+
+    const codes = rawCodes ? rawCodes.split(',').filter(c => c).map(c => c + ',').join('') : '';
 
     const body = new URLSearchParams({
       state,
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
     try {
       data = JSON.parse(text);
     } catch {
-      return NextResponse.json({ error: 'Invalid response from BhuNaksha', raw: text.substring(0, 200) }, { status: 502 });
+      return NextResponse.json({ error: 'Invalid response from BhuNaksha', raw: text.substring(0, 500) }, { status: 502 });
     }
     return NextResponse.json(data);
   } catch (err: any) {

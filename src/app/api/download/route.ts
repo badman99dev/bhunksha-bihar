@@ -109,10 +109,24 @@ export async function POST(req: NextRequest) {
       body: extentBody.toString()
     });
 
-    const extentData = await extentRes.json();
+    const extentText = await extentRes.text();
+    let extentData;
+    try {
+      extentData = JSON.parse(extentText);
+    } catch {
+      return NextResponse.json({
+        error: 'BhuNaksha API returned invalid response',
+        detail: extentText.substring(0, 300),
+        gisLevels
+      }, { status: 502 });
+    }
 
     if (!extentData.gisCode || !extentData.xmax) {
-      return NextResponse.json({ error: 'Map not found for selected levels' }, { status: 404 });
+      return NextResponse.json({
+        error: 'Map not found for selected levels',
+        gisLevels,
+        response: extentData
+      }, { status: 404 });
     }
 
     const gisCode = extentData.gisCode;
